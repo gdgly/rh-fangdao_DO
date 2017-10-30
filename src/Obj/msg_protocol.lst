@@ -1,0 +1,201 @@
+C51 COMPILER V9.00   MSG_PROTOCOL                                                          11/18/2015 10:20:08 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE MSG_PROTOCOL
+OBJECT MODULE PLACED IN .\Obj\msg_protocol.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE app\msg_protocol.c LARGE OMF2 WARNINGLEVEL(0) BROWSE ORDER INCDIR(.\app;.\L
+                    -ib;.\bsp) DEBUG PRINT(.\Obj\msg_protocol.lst) OBJECT(.\Obj\msg_protocol.obj)
+
+line level    source
+
+   1          
+   2          #include <string.h>
+   3          #include "msg_protocol.h"
+   4          #include "USART.h"
+   5          #include "EEPROM.h"
+   6          #include "timerhl.h"
+   7          #include "com.h"
+   8          #include "eepromhl.h"
+   9          
+  10          
+  11          extern u8 g_alarm_signal[4];
+  12          extern u32 time_lamp_on_sec[4];
+  13          extern u8 saving_flag;
+  14          extern u32 g_curr_old[4], g_curr_new[4], g_curr_tmp[4];
+  15          extern u8 work_mode;
+  16          
+  17          void frame_anlayze(u8 *rx_data, FrameStr frame)
+  18          {
+  19   1              u8 data_len = 0, i = 0;
+  20   1              u8 crc = 0; 
+  21   1      
+  22   1              frame->sync_1 = rx_data[0];
+  23   1              frame->len = rx_data[1] | rx_data[2]<<8;
+  24   1              frame->addr = rx_data[3]<<8 | rx_data[4];
+  25   1              frame->child_addr = rx_data[5]<<8 | rx_data[6];
+  26   1              frame->sync_2 = rx_data[7];
+  27   1              frame->cmd = rx_data[8]<<8 | rx_data[9];
+  28   1              
+  29   1              data_len = frame->len - 2;
+  30   1              memcpy(frame->pd, &rx_data[10], data_len);
+  31   1                      
+  32   1              data_len = 10 + data_len;
+  33   1              frame->crc = rx_data[data_len++];
+  34   1              frame->end_field = rx_data[data_len];
+  35   1              
+  36   1              frame->para_total = 0;
+  37   1      }
+  38          
+  39          
+  40          // void frame_pack(FrameStr frame, u8 *tx_data)
+  41          // {
+  42          //      u8 i = 0, crc_data_len = 0, crc = 0, tmp[50] = {0};
+  43          //      
+  44          //      tx_data[0] = frame->sync_1;
+  45          //      tx_data[1] = frame->len>>8;
+  46          //      tx_data[2] = frame->len&0xFF;
+  47          //      tx_data[3] = frame->addr>>8;
+  48          //      tx_data[4] = frame->addr&0xFF;
+  49          //      tx_data[5] = frame->sync_2;
+  50          //      tx_data[6] = frame->cmd>>8;
+  51          //      tx_data[7] = frame->cmd&0xFF;
+  52          //      for (i=0; i<frame->len-2; i++)
+  53          //      {
+  54          //              tx_data[8+i] = frame->pd[i];
+C51 COMPILER V9.00   MSG_PROTOCOL                                                          11/18/2015 10:20:08 PAGE 2   
+
+  55          //      }
+  56          //      
+  57          //      crc_data_len = frame->len + 5;
+  58          //      for (i=0; i<crc_data_len; i++)
+  59          //      {
+  60          //              tmp[i] = tx_data[i+1];
+  61          //      }
+  62          //      
+  63          //      tx_data[crc_data_len+1] = check_sum(tmp, crc_data_len);
+  64          //      tx_data[crc_data_len+2] = frame->end_field;
+  65          // }
+  66          
+  67          
+  68          void get_alarm_msg(FrameStr rx_f, u8 *tx_data, u8 *tx_data_len)
+  69          {
+  70   1              u8 crc_data_len = 0, crc = 0;
+  71   1              u8 tmp[8] = {0}, i = 0;
+  72   1              u8 rx_para1 = 0, rx_para2 = 0, tx_para2[10] = {0}, tx_para1 = 0;
+  73   1              u8 para2_cnt = 0;
+  74   1              u16 tx_cmd = CTU_ALARM_STATUS_CMD, data_len = 0;
+  75   1              u16 rx_cmd = 0;
+  76   1              
+  77   1              rx_para1 = rx_f->pd[0]; 
+  78   1              rx_para2 = rx_f->pd[1];
+  79   1              
+  80   1              to_bin(rx_para1, tmp);
+  81   1              for (i=0; i<8; i++)
+  82   1              {
+  83   2                      if (tmp[i] == 1)
+  84   2                      {
+  85   3                              tx_para2[para2_cnt++] = i+1;
+  86   3                              tx_para2[para2_cnt++] = g_alarm_signal[i];      
+  87   3                              tx_para1++;                     
+  88   3                      }
+  89   2              }
+  90   1              
+  91   1              if (rx_para2 == 1)
+  92   1              {
+  93   2                      saving_flag = 1;
+  94   2                      for (i=0; i<4; i++)
+  95   2                      {
+  96   3                              if (0x1 == work_mode)
+  97   3                              {
+  98   4                                      time_lamp_on_sec[i] = 15;
+  99   4                              }
+ 100   3                              else
+ 101   3                              {
+ 102   4                                      time_lamp_on_sec[i] = 60;
+ 103   4                              }
+ 104   3                              
+ 105   3                              
+ 106   3                              g_curr_old[i] = 0;
+ 107   3                              g_curr_new[i] = 0;
+ 108   3                      }               
+ 109   2              }
+ 110   1              
+ 111   1              data_len = 2 + 1 + 2 + para2_cnt;
+ 112   1              tx_data[0] = SYNC;
+ 113   1              tx_data[1] = data_len&0xFF;
+ 114   1              tx_data[2] = data_len>>8;       
+ 115   1              tx_data[3] = rx_f->addr>>8;
+ 116   1              tx_data[4] = rx_f->addr&0xFF;
+C51 COMPILER V9.00   MSG_PROTOCOL                                                          11/18/2015 10:20:08 PAGE 3   
+
+ 117   1              tx_data[5] = SYNC;      
+ 118   1              tx_data[6] = tx_cmd>>8;
+ 119   1              tx_data[7] = tx_cmd&0xFF;
+ 120   1              tx_data[8] = rx_f->child_addr>>8;
+ 121   1              tx_data[9] = rx_f->child_addr&0xFF;
+ 122   1              tx_data[10] = tx_para1;
+ 123   1              for (i=0; i<para2_cnt; i++)
+ 124   1              {
+ 125   2                      tx_data[11+i] = tx_para2[i];
+ 126   2              }
+ 127   1              
+ 128   1              crc_data_len = data_len + 5;
+ 129   1              memcpy(tmp, &tx_data[6], data_len);
+ 130   1              
+ 131   1              tx_data[crc_data_len+1] = ~check_sum(tmp, data_len);
+ 132   1              tx_data[crc_data_len+2] = END_FIELD;
+ 133   1              *tx_data_len = data_len + 8;
+ 134   1      }
+ 135          
+ 136          
+ 137          
+ 138          
+ 139          void protocol_action(void)
+ 140          {
+ 141   1              Frame frame_struct, frame_struct2;
+ 142   1              u8 rx_data[50] = {0}, tx_data[50] = {0}, tx_data_len = 0;
+ 143   1              u16 cmd = 0;
+ 144   1              u8 para_total = 0;
+ 145   1      
+ 146   1              memset(&frame_struct2, 0, sizeof(Frame));
+ 147   1                      
+ 148   1              uart2_rx_data(rx_data);
+ 149   1      
+ 150   1              frame_anlayze(rx_data, &frame_struct);
+ 151   1      
+ 152   1              switch (frame_struct.cmd)
+ 153   1              {
+ 154   2                      case CHILD_ALARM_STATUS_CMD:                                            
+ 155   2                              if (frame_struct.len == 4)
+ 156   2                              {
+ 157   3                                      get_alarm_msg(&frame_struct, tx_data, &tx_data_len);
+ 158   3                                      uart2_tx_data(tx_data, tx_data_len);
+ 159   3                              }
+ 160   2                      break;
+ 161   2      
+ 162   2              }
+ 163   1      
+ 164   1      }
+ 165          
+ 166          
+ 167          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1419    ----
+   CONSTANT SIZE    =    118    ----
+   XDATA SIZE       =   ----     278
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+C51 COMPILER V9.00   MSG_PROTOCOL                                                          11/18/2015 10:20:08 PAGE 4   
+
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

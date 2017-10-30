@@ -1,0 +1,726 @@
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE ADCHL
+OBJECT MODULE PLACED IN .\Obj\adchl.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE app\adchl.c LARGE OMF2 WARNINGLEVEL(0) BROWSE ORDER INCDIR(.\app;.\Lib;.\bs
+                    -p) DEBUG PRINT(.\Obj\adchl.lst) OBJECT(.\Obj\adchl.obj)
+
+line level    source
+
+   1          /*************************************************
+   2            Copyright (C), RoadLighting Tech. Co., Ltd.
+   3            File name: flash.c     
+   4            Author: George      Version: 1.0        Date: 2015/08/20
+   5            Description:  Flash操作
+   6            Others: 无        
+   7            Function List:  
+   8              1. flash_page_erase
+   9                  2. flash_write_data
+  10                  3. flash_read_data
+  11                  4. flash_write_byte
+  12                  5. flash_read_byte
+  13            History:                            
+  14              1. Date:
+  15                 Author:
+  16                 Modification:
+  17          *************************************************/
+  18          #include "adchl.h"
+  19          #include "adc.h"
+  20          #include "com.h"
+  21          #include "code_swtich.h"
+  22          #include "rn8209d.h"
+  23          #include "bsp.h"
+  24          #include "USART.h"
+  25          #include "EEPROM.h"
+  26          #include "timerhl.h"
+  27          #include "eepromhl.h"
+  28          
+  29          
+  30          extern u32 time_lamp_on_sec[4], time_lamp_off_sec[4], time_reset_hour;
+  31          extern u32 time_saving_sec;
+  32          extern u32 time_lamp_on_checking_sec[4];
+  33          extern u32 time_lamp_off_checking_sec[4];
+  34          extern u8 work_mode;
+  35          
+  36          u8 g_alarm_signal[4] = {0};
+  37          static u8 g_status_new[4] = {0}, g_status_old[4] = {0}; 
+  38          static u8 g_power_on_flag[4] = {0};
+  39          static u8 g_write_sector1_en_flag[4] = {0}, g_write_sector2_en_flag[4] = {0};
+  40          u32 g_curr_old[4] = {0}, g_curr_new[4] = {0}, g_curr_tmp[4] = {0};
+  41          u8 g_power_switch_flag[4] = {0};
+  42          
+  43          u32 g_unusual_curr[4] = {0};
+  44          u8 g_unusual_flag[4] = {0};
+  45          
+  46          Queue *g_queue[4];
+  47          u8 saving_flag = 0;
+  48          
+  49          /*
+  50          *Function: get_adc_val      
+  51          *Description: 无电时采集ad值  
+  52          *Calls:  无
+  53          *Data Accessed: 无  
+  54          *Data Updated: 无    
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 2   
+
+  55          *Input: 
+  56                  channel：通道号
+  57          *Output: 无 
+  58          *Return: 采集到的ad值        
+  59          *Others: 无  
+  60          */
+  61          u16 get_adc_val(u8 channel)
+  62          {
+  63   1              u16 adc_val = 0, adc_tmp[10] = {0}, i = 0;
+  64   1              u32 tmp = 0;
+  65   1              for (i=0; i<10; i++)
+  66   1              {
+  67   2                      adc_val = Get_ADC10bitResult(channel);
+  68   2                      tmp += adc_val;
+  69   2              }
+  70   1      
+  71   1              adc_val = tmp / 10;
+  72   1              
+  73   1              return adc_val;
+  74   1      }
+  75          
+  76          
+  77          /*
+  78          *Function: set_channel      
+  79          *Description: 设置通道  
+  80          *Calls: 
+  81                  set_port_val
+  82          *Data Accessed: 无  
+  83          *Data Updated: 无    
+  84          *Input: 
+  85                  channel：通道号
+  86          *Output: 无 
+  87          *Return: 无        
+  88          *Others: 无  
+  89          */
+  90          void set_channel(u8 channel)
+  91          {
+  92   1              switch (channel)
+  93   1              {
+  94   2                      case 0:
+  95   2                              set_port_val(CH_CTRL0, 0);
+  96   2                              set_port_val(CH_CTRL1, 0);
+  97   2                      break;
+  98   2                      
+  99   2                      case 1:
+ 100   2                              set_port_val(CH_CTRL0, 1);
+ 101   2                              set_port_val(CH_CTRL1, 0);
+ 102   2                      break;
+ 103   2                      
+ 104   2                      case 2:
+ 105   2                              set_port_val(CH_CTRL0, 0);
+ 106   2                              set_port_val(CH_CTRL1, 1);
+ 107   2                      break;
+ 108   2                      
+ 109   2                      case 3:
+ 110   2                              set_port_val(CH_CTRL0, 1);
+ 111   2                              set_port_val(CH_CTRL1, 1);
+ 112   2                      break;  
+ 113   2              }
+ 114   1      }
+ 115          
+ 116          /*
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 3   
+
+ 117          *Function: set_alarm_status      
+ 118          *Description: 设置报警状态  点亮相应的led灯  
+ 119          *Calls:  
+ 120                  set_port_val
+ 121          *Data Accessed: 无  
+ 122          *Data Updated: 无    
+ 123          *Input: 
+ 124                  val：报警状态值
+ 125          *Output: 无 
+ 126          *Return: 无      
+ 127          *Others: 无  
+ 128          */
+ 129          void set_alarm_status(u8 *val)
+ 130          {
+ 131   1              if (val[0] == 1)
+ 132   1              {
+ 133   2                      set_port_val(LED_1, 0); 
+ 134   2                      set_port_val(ALARM_OUT1, 1);
+ 135   2              }
+ 136   1              else
+ 137   1              {               
+ 138   2                      set_port_val(LED_1, 1);
+ 139   2                      set_port_val(ALARM_OUT1, 0);
+ 140   2              }
+ 141   1              
+ 142   1              if (val[1] == 1)
+ 143   1              {               
+ 144   2                      set_port_val(LED_2, 0);
+ 145   2                      set_port_val(ALARM_OUT2, 1);
+ 146   2              }
+ 147   1              else
+ 148   1              {               
+ 149   2                      set_port_val(LED_2, 1);
+ 150   2                      set_port_val(ALARM_OUT2, 0);
+ 151   2              }
+ 152   1              
+ 153   1              if (val[2] == 1)
+ 154   1              {
+ 155   2                      set_port_val(LED_3, 0);
+ 156   2                      set_port_val(ALARM_OUT3, 1);
+ 157   2              }
+ 158   1              else
+ 159   1              {
+ 160   2                      set_port_val(LED_3, 1);
+ 161   2                      set_port_val(ALARM_OUT3, 0);
+ 162   2              }
+ 163   1              
+ 164   1              if (val[3] == 1)
+ 165   1              {
+ 166   2                      set_port_val(LED_4, 0);
+ 167   2                      set_port_val(ALARM_OUT4, 1);
+ 168   2              }
+ 169   1              else
+ 170   1              {
+ 171   2                      set_port_val(LED_4, 1);
+ 172   2                      set_port_val(ALARM_OUT4, 0);
+ 173   2              }
+ 174   1      }
+ 175          
+ 176          
+ 177          /*
+ 178          *Function: check_is_frist_lamp_on      
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 4   
+
+ 179          *Description: 检测路灯是否是第一工作  
+ 180          *Calls:  
+ 181                  ee2_read_data
+ 182          *Data Accessed: 无  
+ 183          *Data Updated: 无    
+ 184          *Input: 
+ 185                  channel：通道号
+ 186          *Output: 无 
+ 187          *Return: TRUE第一上电  FALSE不是第一次上电     
+ 188          *Others: 无  
+ 189          */
+ 190          bool check_is_frist_lamp_on(u8 channel)
+ 191          {
+ 192   1              u8 i = 0;
+ 193   1              u8 tmp[3] = {0};
+ 194   1              
+ 195   1              ee2_read_data(channel, tmp);    // 读取通道的电流基数值
+ 196   1              
+ 197   1              for (i=0; i<3; i++)
+ 198   1              {
+ 199   2                      if (tmp[i] != 0xFF)
+ 200   2                      {
+ 201   3                              return FALSE;
+ 202   3                      }
+ 203   2              }
+ 204   1              
+ 205   1              return TRUE;
+ 206   1      }
+ 207          
+ 208          /*
+ 209          *Function: frist_lamp_on_hander      
+ 210          *Description: 路灯第一上电处理
+ 211          *Calls:  
+ 212                  rn8209_get_curr
+ 213          *Data Accessed: 
+ 214                  g_queue
+ 215          *Data Updated: 
+ 216                  g_queue
+ 217          *Input: 
+ 218                  channel：通道号
+ 219          *Output: 无 
+ 220          *Return: 无      
+ 221          *Others: 无  
+ 222          */
+ 223          void frist_lamp_on_hander(u8 channel)
+ 224          {
+ 225   1              u8 ret = 0, i = 0, tmp[3] = {0};
+ 226   1              u32 curr_total = 0, curr_average = 0, curr_tmp = 0;
+ 227   1              u32 curr[10] = {0};
+ 228   1              
+ 229   1              curr_tmp = rn8209_get_curr();
+ 230   1      
+ 231   1              ret = queue_is_full(&g_queue[channel]);
+ 232   1              if (ret == FALSE)       // 队列不满
+ 233   1              {
+ 234   2                      queue_en(&g_queue[channel], curr_tmp);
+ 235   2              }
+ 236   1              
+ 237   1              ret = queue_is_full(&g_queue[channel]);
+ 238   1              if (ret == TRUE)                        // 队列满
+ 239   1              {
+ 240   2                      queue_traverse(&g_queue[channel], curr);
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 5   
+
+ 241   2                      for (i=0; i<10; i++)
+ 242   2                      {
+ 243   3                              curr_total += curr[i];          // 计算采集10次电流值得和
+ 244   3                      }
+ 245   2                      
+ 246   2                      curr_average = curr_total / 10;
+ 247   2                      curr_average = curr_average * 95 / 100; 
+ 248   2                      if (curr_tmp < curr_average)    //  
+ 249   2                      {
+ 250   3                              tmp[0] = curr[10]>>16;
+ 251   3                              tmp[1] = curr[10]>>8;
+ 252   3                              tmp[2] = curr[10]&0xFF; 
+ 253   3                              ee2_write_data(channel, tmp);
+ 254   3      
+ 255   3                      }
+ 256   2                      else
+ 257   2                      {
+ 258   3                              queue_de(&g_queue[channel]); 
+ 259   3                      }
+ 260   2              }
+ 261   1      }
+ 262          
+ 263          
+ 264          /*
+ 265          *Function: read_lamp_work_curr_base      
+ 266          *Description: 读取路灯没有被盗的时候的电流基数值  
+ 267          *Calls:  
+ 268                  ee2_read_data
+ 269          *Data Accessed: 无  
+ 270          *Data Updated: 无    
+ 271          *Input: 
+ 272                  channel：通道号
+ 273          *Output: 无 
+ 274          *Return: 无      
+ 275          *Others: 无  
+ 276          */
+ 277          u32 read_lamp_work_curr_base(u8 channel)
+ 278          {
+ 279   1              u8 tmp[3] = {0};
+ 280   1              u32 curr = 0;
+ 281   1              
+ 282   1              ee2_read_data(channel, tmp);
+ 283   1              
+ 284   1              curr = tmp[0];
+ 285   1              curr = (curr<<8) + tmp[1];
+ 286   1              curr = (curr<<8) + tmp[2];
+ 287   1              
+ 288   1              return curr;
+ 289   1      }
+ 290          
+ 291          /*
+ 292          *Function: write_lamp_work_curr_base      
+ 293          *Description: 记录路灯工作状态下的电流值 
+ 294          *Calls:  
+ 295                  rn8209_get_curr
+ 296          *Data Accessed: 无  
+ 297          *Data Updated: 无    
+ 298          *Input: 
+ 299                  channel：通道号
+ 300          *Output: 无 
+ 301          *Return: 无      
+ 302          *Others: 无  
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 6   
+
+ 303          */
+ 304          void write_lamp_work_curr_base(u8 channel)
+ 305          {
+ 306   1              u32 tmp_curr = 0, curr = 0, curr_total = 0;
+ 307   1              u8 i = 0, tmp[3] = {0};
+ 308   1              
+ 309   1              for (i=0; i<10; i++)
+ 310   1              {
+ 311   2                      tmp_curr = rn8209_get_curr();   // 连续采集电流值
+ 312   2                      delay_1ms(2);
+ 313   2                      curr_total += tmp_curr;
+ 314   2              }
+ 315   1              
+ 316   1              curr = curr_total / 10;
+ 317   1              tmp[0] = curr>>16;
+ 318   1              tmp[1] = curr>>8;
+ 319   1              tmp[2] = curr&0xFF;     
+ 320   1              
+ 321   1              ee1_write_data(tmp);
+ 322   1      }
+ 323          
+ 324          
+ 325          /*
+ 326          *Function: get_lamp_work_status      
+ 327          *Description: 获取路灯工作状态  
+ 328          *Calls:  
+ 329                  rn8209_get_vol
+ 330          *Data Accessed: 无  
+ 331          *Data Updated: 无    
+ 332          *Input: 无
+ 333          *Output: 无 
+ 334          *Return: 0表示关灯  1表示开灯     
+ 335          *Others: 无  
+ 336          */
+ 337          u8 get_lamp_work_status(void)
+ 338          {
+ 339   1              u8 status = 0, i = 0, cnt = 0;
+ 340   1              u16 vol_val = 0; 
+ 341   1      
+ 342   1              for (i=0; i<10; i++)
+ 343   1              {
+ 344   2                      vol_val = rn8209_get_vol();
+ 345   2                      delay_1ms(2);
+ 346   2                      cnt++;
+ 347   2                      
+ 348   2                      if (vol_val < 100)      // 路灯有电无电检测
+ 349   2                      {       
+ 350   3                              if (cnt > 8)
+ 351   3                              {
+ 352   4                                      cnt = 0;
+ 353   4                                      status = 0;      //  road lamp no run
+ 354   4                              }               
+ 355   3                      }
+ 356   2                      else
+ 357   2                      {
+ 358   3                              cnt = 0;
+ 359   3                              status = 1;     // road lamp run
+ 360   3                      }
+ 361   2              }
+ 362   1              
+ 363   1              return status;
+ 364   1      }
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 7   
+
+ 365          
+ 366          
+ 367          
+ 368          
+ 369          
+ 370          void unusual_curr(u8 channel)
+ 371          {
+ 372   1              u32 i = 0, cnt = 0;
+ 373   1              for (i=0; i<10; i++)
+ 374   1              {
+ 375   2                      g_unusual_curr[channel] = rn8209_get_curr();
+ 376   2      
+ 377   2                      if (g_unusual_curr[channel] < 0x400)
+ 378   2                      {
+ 379   3                              cnt++;
+ 380   3                              if (cnt > 8)
+ 381   3                              {               
+ 382   4                                      cnt = 0;
+ 383   4                                      g_unusual_flag[channel] = 1;
+ 384   4                                      
+ 385   4                                      TX1_write2buff(0x33);
+ 386   4                                      TX1_write2buff(channel);
+ 387   4                              }
+ 388   3                      }
+ 389   2                      else
+ 390   2                      {
+ 391   3                              cnt = 0;
+ 392   3                              g_unusual_flag[channel] = 0;
+ 393   3                              TX1_write2buff(0x22);
+ 394   3                      }
+ 395   2              }
+ 396   1      }
+ 397          
+ 398          
+ 399          /*
+ 400          *Function: get_lamp_on_alarm_status      
+ 401          *Description: 获取路灯工作的时候的报警状态  
+ 402          *Calls:  
+ 403                  set_port_val
+ 404          *Data Accessed: 
+ 405                  curr_old
+ 406                  curr_tmp
+ 407                  curr_new
+ 408                  cnt
+ 409          *Data Updated:
+ 410                  curr_old
+ 411                  curr_tmp
+ 412                  curr_new
+ 413          *Input: 
+ 414                  val：报警状态值
+ 415          *Output: 无 
+ 416          *Return: 无      
+ 417          *Others: 无  
+ 418          */
+ 419          void get_lamp_on_alarm_status(u8 channel)
+ 420          {
+ 421   1              u8 switch_val = 0, i = 0;
+ 422   1              u32 tmp = 0, cnt = 0;   
+ 423   1              
+ 424   1              switch_val = get_switch_2_val();                // 拨码开关 报警等级设置
+ 425   1              
+ 426   1              if (g_alarm_signal[channel] == 1)
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 8   
+
+ 427   1              {
+ 428   2                      TX1_write2buff(channel);
+ 429   2                      TX1_write2buff(0xBB);
+ 430   2              }
+ 431   1              else
+ 432   1              {
+ 433   2              
+ 434   2                      TX1_write2buff(0x11);
+ 435   2                      TX1_write2buff(channel);
+ 436   2                      
+ 437   2                      g_curr_tmp[channel] = g_curr_old[channel] * 95 / 100;
+ 438   2                      
+ 439   2                      tmp = rn8209_get_curr();
+ 440   2                      
+ 441   2                      g_curr_new[channel] = tmp * (70 + switch_val * 10) / 100;
+ 442   2                      
+ 443   2                      if(g_curr_new[channel] >= g_curr_old[channel])          // 采集到的新值大于老值 
+ 444   2                      {
+ 445   3                              g_curr_old[channel] = g_curr_new[channel];
+ 446   3                              
+ 447   3                              if(0x1 == work_mode)
+ 448   3                              {
+ 449   4                                      time_lamp_on_checking_sec[channel] = 10;
+ 450   4                              }
+ 451   3                              else
+ 452   3                              {
+ 453   4                                      time_lamp_on_checking_sec[channel] = 60;                // 60秒
+ 454   4                              }
+ 455   3                              g_alarm_signal[channel] = 0;
+ 456   3                      }
+ 457   2                      else if (g_curr_new[channel] > g_curr_tmp[channel]) // 采集到的新值小于老值得95%
+ 458   2                      {
+ 459   3                              g_curr_old[channel] = g_curr_new[channel];
+ 460   3                              
+ 461   3                              if(0x1 == work_mode)
+ 462   3                              {
+ 463   4                                      time_lamp_on_checking_sec[channel] = 10;
+ 464   4                              }
+ 465   3                              else
+ 466   3                              {
+ 467   4                                      time_lamp_on_checking_sec[channel] = 60;                // 60秒
+ 468   4                              }
+ 469   3                              g_alarm_signal[channel] = 0;
+ 470   3                      }
+ 471   2                      else if (g_curr_tmp[channel] - g_curr_new[channel] > 0xA00)                                     // 采集到的新值小于较小  测�
+             -�为报警        
+ 472   2                      {
+ 473   3                              TX1_write2buff(0x55);
+ 474   3                              if (time_lamp_on_checking_sec[channel] == 0)            // 连续监测一分钟
+ 475   3                              {
+ 476   4                                      if(0x1 == work_mode)
+ 477   4                                      {
+ 478   5                                              time_lamp_on_checking_sec[channel] = 10;
+ 479   5                                      }
+ 480   4                                      else
+ 481   4                                      {
+ 482   5                                              time_lamp_on_checking_sec[channel] = 60;                // 60秒
+ 483   5                                      }
+ 484   4                              
+ 485   4                                      g_alarm_signal[channel] = 1;
+ 486   4                                      
+ 487   4                              }       
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 9   
+
+ 488   3                              
+ 489   3                      }
+ 490   2                      
+ 491   2              }
+ 492   1      }
+ 493          
+ 494          /*
+ 495          *Function: get_lamp_switch_alarm_status      
+ 496          *Description: 从无电切换到无电时 会有电流变化，通过本函数检测报警状态  
+ 497          *Calls:  
+ 498                  read_lamp_work_curr_base
+ 499                  rn8209_get_curr
+ 500          *Data Accessed: 无  
+ 501          *Data Updated: 无    
+ 502          *Input: 
+ 503                  channel：通道号
+ 504          *Output: 无 
+ 505          *Return: 报警状态   0不报警 1报警     
+ 506          *Others: 无  
+ 507          */
+ 508          u8 get_lamp_switch_alarm_status(u8 channel)
+ 509          {
+ 510   1              u32 curr_base = 0, cnt = 0, tmp = 0;
+ 511   1              u8 status = 0, i = 0;
+ 512   1              
+ 513   1              curr_base = read_lamp_work_curr_base(channel);  // 读取 电流基数值
+ 514   1              
+ 515   1              curr_base = curr_base * 90 / 100;                       // 
+ 516   1              for (i=0; i<10; i++)
+ 517   1              {
+ 518   2                      tmp = rn8209_get_curr();
+ 519   2                      delay_1ms(2);
+ 520   2                      if (tmp < curr_base)
+ 521   2                      {
+ 522   3                              cnt++;
+ 523   3                              if (cnt > 8)
+ 524   3                              {
+ 525   4                                      cnt = 0;                                
+ 526   4                                      status = 1;
+ 527   4                              }
+ 528   3                      }
+ 529   2                      else
+ 530   2                      {
+ 531   3                              cnt = 0;
+ 532   3                      }
+ 533   2              }
+ 534   1              
+ 535   1              return status;
+ 536   1      }
+ 537          
+ 538          /*
+ 539          *Function: get_lamp_off_alarm_status      
+ 540          *Description: 获取路灯不工作时报警状态  
+ 541          *Calls:  
+ 542                  set_port_val
+ 543          *Data Accessed: 无  
+ 544          *Data Updated: 无    
+ 545          *Input: 
+ 546                  ad_to_vol
+ 547          *Output: 无 
+ 548          *Return: 无      
+ 549          *Others: 无  
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 10  
+
+ 550          */
+ 551          void get_lamp_off_alarm_status(u8 channel)
+ 552          {
+ 553   1              float vol_val = 0, vol_base = 0;
+ 554   1              u16 ad_val = 0;
+ 555   1              
+ 556   1              ad_val = Get_ADC10bitResult(3+channel); 
+ 557   1              vol_val = ad_to_vol(ad_val);
+ 558   1              
+ 559   1              if (vol_val > 1.4)
+ 560   1              {                       
+ 561   2                      if (time_lamp_off_checking_sec[channel] == 0)           //无电检测时间
+ 562   2                      {       
+ 563   3                              if(0x1 == work_mode)
+ 564   3                              {
+ 565   4                                      time_lamp_off_checking_sec[channel] = 10;       // 10 秒钟
+ 566   4                              }
+ 567   3                              else
+ 568   3                              {
+ 569   4                                      time_lamp_off_checking_sec[channel] = 60;       // 60 秒钟
+ 570   4                              }               
+ 571   3                              
+ 572   3                              g_alarm_signal[channel] = 1;
+ 573   3                      }       
+ 574   2              }
+ 575   1              else
+ 576   1              {
+ 577   2              
+ 578   2                      if(0x1 == work_mode)
+ 579   2                      {
+ 580   3                              time_lamp_off_checking_sec[channel] = 10;       // 10 秒钟
+ 581   3                      }
+ 582   2                      else
+ 583   2                      {
+ 584   3                              time_lamp_off_checking_sec[channel] = 60;       // 60 秒钟
+ 585   3                      }       
+ 586   2                      
+ 587   2                      g_alarm_signal[channel] = 0;
+ 588   2              }
+ 589   1      }
+ 590          
+ 591          
+ 592          /*
+ 593          *Function: set_alarm_status      
+ 594          *Description: 设置报警状态  点亮相应的led灯  
+ 595          *Calls:  
+ 596                  set_port_val
+ 597          *Data Accessed: 无  
+ 598          *Data Updated: 无    
+ 599          *Input: 
+ 600                  val：报警状态值
+ 601          *Output: 无 
+ 602          *Return: 无      
+ 603          *Others: 无  
+ 604          */
+ 605          void app(u8 channel)
+ 606          {               
+ 607   1      
+ 608   1              g_power_on_flag[channel] = check_is_frist_lamp_on(channel);     
+ 609   1                      
+ 610   1              // 检测是否有电   
+ 611   1              g_status_old[channel] = g_status_new[channel];          
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 11  
+
+ 612   1              g_status_new[channel] = get_lamp_work_status();
+ 613   1              
+ 614   1              if (g_status_new[channel] != g_status_old[channel])
+ 615   1              {
+ 616   2                      if(g_status_new[channel] == 1)          // 从无电切换到有电
+ 617   2                      {       
+ 618   3                              if (0x1 == work_mode)
+ 619   3                              {
+ 620   4                                      time_lamp_on_sec[channel] = 10; // 测试模式
+ 621   4                              }
+ 622   3                              else
+ 623   3                              {
+ 624   4                                      time_lamp_on_sec[channel] = 60;                 // 1分钟
+ 625   4                              }
+ 626   3                              TX1_write2buff(0xA1);
+ 627   3                              g_curr_tmp[channel] = 0;
+ 628   3                              g_curr_new[channel] = 0;
+ 629   3                              g_curr_old[channel] = 0;
+ 630   3                      }
+ 631   2                      else                                                            // 从有电切换到无电
+ 632   2                      {               
+ 633   3                              if (0x1 == work_mode)
+ 634   3                              {
+ 635   4                                      time_lamp_off_sec[channel] = 10;
+ 636   4                              }
+ 637   3                              else
+ 638   3                              {
+ 639   4                                      time_lamp_off_sec[channel] = 60;        // 30秒
+ 640   4                              }       
+ 641   3                              TX1_write2buff(0xA2);
+ 642   3                      }       
+ 643   2              }
+ 644   1              
+ 645   1              // 有电检测报警
+ 646   1              if (g_status_new[channel] == 1)         
+ 647   1              {               
+ 648   2                      if (time_lamp_on_sec[channel] == 0)  // 状态切换等待时间到
+ 649   2                      {
+ 650   3                              get_lamp_on_alarm_status(channel);      // 获取有电报警状态
+ 651   3                      }
+ 652   2              }               
+ 653   1              else                                                    // 无电检测报警
+ 654   1              {
+ 655   2                      if (time_lamp_off_sec[channel] == 0)    // 状态切换等待时间到
+ 656   2                      {                       
+ 657   3                              get_lamp_off_alarm_status(channel);
+ 658   3                      }
+ 659   2              }               
+ 660   1      }
+ 661          
+ 662          
+ 663          
+ 664          
+ 665          
+ 666          
+ 667          
+ 668          
+ 669          
+ 670          
+ 671          
+ 672          
+ 673          
+C51 COMPILER V9.00   ADCHL                                                                 11/18/2015 10:20:08 PAGE 12  
+
+ 674          
+ 675          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3376    ----
+   CONSTANT SIZE    =     72    ----
+   XDATA SIZE       =    109     164
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

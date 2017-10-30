@@ -1,0 +1,138 @@
+C51 COMPILER V9.00   EEPROMHL                                                              11/18/2015 10:20:09 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE EEPROMHL
+OBJECT MODULE PLACED IN .\Obj\eepromhl.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE app\eepromhl.c LARGE OMF2 WARNINGLEVEL(0) BROWSE ORDER INCDIR(.\app;.\Lib;.
+                    -\bsp) DEBUG PRINT(.\Obj\eepromhl.lst) OBJECT(.\Obj\eepromhl.obj)
+
+line level    source
+
+   1          
+   2          #include "EEPROM.h"
+   3          #include "eepromhl.h"
+   4          
+   5          
+   6          void ee1_write_data(u8 channel, u8 *dat)
+   7          {
+   8   1              
+   9   1              switch (channel)
+  10   1              {
+  11   2                      case 0:
+  12   2                              EEPROM_write_n(CH_1_CURR_ADDR, dat, CH_1_CURR_ADDR_SIZE);
+  13   2                      break;
+  14   2                      
+  15   2                      case 1:
+  16   2                              EEPROM_write_n(CH_2_CURR_ADDR, dat, CH_2_CURR_ADDR_SIZE);
+  17   2                      break;
+  18   2                      
+  19   2                      case 2:
+  20   2                              EEPROM_write_n(CH_3_CURR_ADDR, dat, CH_3_CURR_ADDR_SIZE);
+  21   2                      break;
+  22   2                      
+  23   2                      case 3:
+  24   2                              EEPROM_write_n(CH_4_CURR_ADDR, dat, CH_4_CURR_ADDR_SIZE);
+  25   2                      break;
+  26   2              }
+  27   1      }
+  28          
+  29          void ee2_write_data(u8 channel, u8 *dat)
+  30          {
+  31   1      
+  32   1              switch (channel)
+  33   1              {
+  34   2                      case 0:
+  35   2                              EEPROM_write_n(CH_1_VALID_CURR_ADDR, dat, CH_1_VALID_CURR_ADDR_SIZE);
+  36   2                      break;
+  37   2                      
+  38   2                      case 1:
+  39   2                              EEPROM_write_n(CH_2_VALID_CURR_ADDR, dat, CH_2_VALID_CURR_ADDR_SIZE);
+  40   2                      break;
+  41   2                      
+  42   2                      case 2:
+  43   2                              EEPROM_write_n(CH_3_VALID_CURR_ADDR, dat, CH_3_VALID_CURR_ADDR_SIZE);
+  44   2                      break;
+  45   2                      
+  46   2                      case 3:
+  47   2                              EEPROM_write_n(CH_4_VALID_CURR_ADDR, dat, CH_4_VALID_CURR_ADDR_SIZE);
+  48   2                      break;
+  49   2              }       
+  50   1      }
+  51          
+  52          
+  53          void ee2_read_data(u8 channel, u8 *dat)
+  54          {
+C51 COMPILER V9.00   EEPROMHL                                                              11/18/2015 10:20:09 PAGE 2   
+
+  55   1      
+  56   1              switch (channel)
+  57   1              {
+  58   2                      case 0:
+  59   2                              EEPROM_read_n(CH_1_VALID_CURR_ADDR, dat, CH_1_VALID_CURR_ADDR_SIZE);
+  60   2                      break;
+  61   2                      
+  62   2                      case 1:
+  63   2                              EEPROM_read_n(CH_2_VALID_CURR_ADDR, dat, CH_2_VALID_CURR_ADDR_SIZE);
+  64   2                      break;
+  65   2                      
+  66   2                      case 2:
+  67   2                              EEPROM_read_n(CH_3_VALID_CURR_ADDR, dat, CH_3_VALID_CURR_ADDR_SIZE);
+  68   2                      break;
+  69   2                      
+  70   2                      case 3:
+  71   2                              EEPROM_read_n(CH_4_VALID_CURR_ADDR, dat, CH_4_VALID_CURR_ADDR_SIZE);
+  72   2                      break;
+  73   2              }
+  74   1      }
+  75          
+  76          
+  77          void ee1_copy_to_ee2(u8 channel)
+  78          {
+  79   1              u8 tmp[5] = {0};
+  80   1              
+  81   1              switch (channel)
+  82   1              {
+  83   2                      case 0:
+  84   2                              EEPROM_read_n(CH_1_CURR_ADDR, tmp, CH_1_CURR_ADDR_SIZE);
+  85   2                              EEPROM_write_n(CH_1_VALID_CURR_ADDR, tmp, CH_1_VALID_CURR_ADDR_SIZE);
+  86   2                      break;
+  87   2                      
+  88   2                      case 1:
+  89   2                              EEPROM_read_n(CH_2_CURR_ADDR, tmp, CH_2_CURR_ADDR_SIZE);
+  90   2                              EEPROM_write_n(CH_2_VALID_CURR_ADDR, tmp, CH_2_VALID_CURR_ADDR_SIZE);
+  91   2                      break;
+  92   2                      
+  93   2                      case 2:
+  94   2                              EEPROM_read_n(CH_3_CURR_ADDR, tmp, CH_3_CURR_ADDR_SIZE);
+  95   2                              EEPROM_write_n(CH_3_VALID_CURR_ADDR, tmp, CH_3_VALID_CURR_ADDR_SIZE);
+  96   2                      break;
+  97   2                      
+  98   2                      case 3:
+  99   2                              EEPROM_read_n(CH_4_CURR_ADDR, tmp, CH_4_CURR_ADDR_SIZE);
+ 100   2                              EEPROM_write_n(CH_4_VALID_CURR_ADDR, tmp, CH_4_VALID_CURR_ADDR_SIZE);
+ 101   2                      break;
+ 102   2              }
+ 103   1      }
+ 104          
+ 105          
+ 106          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    590    ----
+   CONSTANT SIZE    =      5    ----
+   XDATA SIZE       =   ----      15
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+C51 COMPILER V9.00   EEPROMHL                                                              11/18/2015 10:20:09 PAGE 3   
+
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

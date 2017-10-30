@@ -1,0 +1,69 @@
+C51 COMPILER V9.00   CODE_SWITCH                                                           11/18/2015 10:20:08 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE CODE_SWITCH
+OBJECT MODULE PLACED IN .\Obj\code_switch.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE app\code_switch.c LARGE OMF2 WARNINGLEVEL(0) BROWSE ORDER INCDIR(.\app;.\Li
+                    -b;.\bsp) DEBUG PRINT(.\Obj\code_switch.lst) OBJECT(.\Obj\code_switch.obj)
+
+line level    source
+
+   1          
+   2          
+   3          #include "code_switch.h"
+   4          #include "bsp.h"
+   5          
+   6          
+   7          u8 get_switch_1_val()
+   8          {
+   9   1              u8 val = 0;
+  10   1                      
+  11   1              val = (get_port_val(CODE_1) & 0x1) | ((get_port_val(CODE_2) & 0x01)<<1); 
+  12   1      
+  13   1              return val;
+  14   1      }
+  15          
+  16          
+  17          
+  18          u8 get_switch_2_val()
+  19          {
+  20   1              u8 val = 0;
+  21   1                      
+  22   1              val = (get_port_val(CODE_3) & 0x1) | ((get_port_val(CODE_4) & 0x01)<<1); 
+  23   1      
+  24   1              return val;
+  25   1      }
+  26          
+  27          
+  28          u8 get_app_wrok_status()
+  29          {
+  30   1              u8 val = 0;
+  31   1                      
+  32   1              val = get_port_val(CODE_1) & 0x1; 
+  33   1      
+  34   1              return val;
+  35   1      }
+  36          
+  37          
+  38          
+  39          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     66    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+C51 COMPILER V9.00   CODE_SWITCH                                                           11/18/2015 10:20:08 PAGE 2   
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

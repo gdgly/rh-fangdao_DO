@@ -1,0 +1,19 @@
+".\Obj\main.obj",
+".\Obj\spi.obj",
+".\Obj\com.obj",
+".\Obj\rn8209d.obj",
+".\Obj\timerhl.obj",
+".\Obj\adchl.obj",
+".\Obj\code_switch.obj",
+".\Obj\msg_protocol.obj",
+".\Obj\eepromhl.obj",
+".\Obj\bsp.obj",
+".\Obj\ADC.obj",
+".\Obj\EEPROM.obj",
+".\Obj\GPIO.obj",
+".\Obj\timer.obj",
+".\Obj\USART.obj",
+".\Obj\PCA.obj" 
+TO ".\Obj\stc" 
+
+PRINT(".\Obj\stc.map")
